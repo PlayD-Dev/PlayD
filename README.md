@@ -16,4 +16,4 @@ PlayD turns requests into a ranked, metadata-rich queue with optional paid prior
 
 ## Author
 
-Yaw Owusu Jr, Malachai Onwona
+Yaw Owusu Jr, Emily Vu, Veljko Cvetkovic, Rumi Khamidov, Raunak Chitre, Rachana Chengari
