@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
-import type { ItunesTrack } from '@/lib/itunes'
+import type { SpotifyTrack } from '@/lib/spotify'
 
 /**
  * POST /api/requests
  * Submits a song request for an event.
- * Body: { eventId, sessionId, track: ItunesTrack, message?, boostAmount? }
- * Returns: the created request row with track data
+ * Body: { eventId, sessionId, track: SpotifyTrack, message?, boostAmount? }
+ * Returns: the created request row with track_data
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
@@ -19,42 +19,32 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const itunesTrack = track as ItunesTrack
+  const t = track as SpotifyTrack
 
-  // 1. Upsert track — use spotify_id column to store iTunes trackId for deduplication
-  const { data: trackRow, error: trackError } = await supabaseAdmin
-    .from('tracks')
-    .upsert(
-      {
-        spotify_id: String(itunesTrack.trackId),
-        title: itunesTrack.trackName,
-        artist: itunesTrack.artistName,
-        album: itunesTrack.collectionName,
-        album_art_url: itunesTrack.artworkUrl100,
-        spotify_url: itunesTrack.previewUrl,
-      },
-      { onConflict: 'spotify_id' },
-    )
-    .select('id')
-    .single()
-
-  if (trackError || !trackRow) {
-    console.error('Track upsert error:', trackError)
-    return NextResponse.json({ error: 'Failed to save track' }, { status: 500 })
+  const trackData = {
+    spotifyId: t.id,
+    title:     t.name,
+    artist:    t.artists?.[0]?.name ?? '',
+    album:     t.album?.name ?? null,
+    albumArt:  t.album?.images?.[0]?.url ?? null,
+    url:       t.external_urls?.spotify ?? null,
+    previewUrl: t.preview_url ?? null,
+    bpm:       t.bpm ?? null,
+    key:       t.keyName ?? null,
+    timeSig:   t.timeSig ?? null,
   }
 
-  // 2. Insert the request
   const { data: request, error: requestError } = await supabaseAdmin
     .from('requests')
     .insert({
-      event_id: eventId,
-      session_id: sessionId,
-      track_id: trackRow.id,
-      message: message?.trim() || null,
+      event_id:       eventId,
+      session_id:     sessionId,
+      track_data:     trackData,
+      message:        message?.trim() || null,
       priority_score: typeof boostAmount === 'number' ? boostAmount : 0,
-      status: 'pending',
+      status:         'pending',
     })
-    .select('*, tracks(*), guest_sessions(display_name)')
+    .select('*, guest_sessions(display_name)')
     .single()
 
   if (requestError || !request) {
