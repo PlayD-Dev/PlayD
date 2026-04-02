@@ -1,11 +1,10 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import type { ItunesTrack } from "@/lib/itunes";
-import { artworkUrl } from "@/lib/itunes";
+import type { SpotifyTrack } from "@/lib/spotify";
 
 type TrackCardProps = {
-  track: ItunesTrack;
+  track: SpotifyTrack;
   onClick: () => void;
   index: number;
 };
@@ -16,6 +15,9 @@ function msToMin(ms: number): string {
 }
 
 export function TrackCard({ track, onClick, index }: TrackCardProps) {
+  const albumArt = track.album.images[1]?.url ?? track.album.images[0]?.url ?? "";
+  const artist = track.artists[0]?.name ?? "";
+
   return (
     <button
       type="button"
@@ -25,8 +27,8 @@ export function TrackCard({ track, onClick, index }: TrackCardProps) {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={artworkUrl(track, 300)}
-        alt={track.collectionName}
+        src={albumArt}
+        alt={track.album.name}
         width={52}
         height={52}
         className="h-[52px] w-[52px] shrink-0 rounded-xl object-cover shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
@@ -34,16 +36,16 @@ export function TrackCard({ track, onClick, index }: TrackCardProps) {
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-medium leading-tight text-white">
-          {track.trackName}
+          {track.name}
         </p>
         <p className="mt-1 truncate text-[13px] leading-tight text-[#7f8db2]">
-          {track.artistName} &middot; {track.collectionName}
+          {artist} &middot; {track.album.name}
         </p>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
         <span className="text-xs tabular-nums text-[#5a6785]">
-          {msToMin(track.trackTimeMillis)}
+          {msToMin(track.duration_ms)}
         </span>
         <ChevronRight className="h-4 w-4 text-[#5a6785]" />
       </div>

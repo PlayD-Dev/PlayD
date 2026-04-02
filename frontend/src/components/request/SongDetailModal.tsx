@@ -2,20 +2,11 @@
 
 import { X, Send, Loader2, Music2 } from "lucide-react";
 import { useEffect } from "react";
-import type { ItunesTrack } from "@/lib/itunes";
-import { artworkUrl } from "@/lib/itunes";
-import type { TrackMeta } from "@/lib/getsongbpm";
+import type { SpotifyTrack } from "@/lib/spotify";
 import { BoostSelector } from "./BoostSelector";
 
-type MetaState = {
-  loading: boolean;
-  data: TrackMeta | null;
-  error: string | null;
-};
-
 type SongDetailModalProps = {
-  track: ItunesTrack;
-  meta: MetaState;
+  track: SpotifyTrack;
   message: string;
   onMessageChange: (value: string) => void;
   boostAmount: number;
@@ -30,34 +21,21 @@ function msToMin(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function MetaPill({
-  label,
-  value,
-  loading,
-}: {
-  label: string;
-  value: string | undefined;
-  loading: boolean;
-}) {
+function MetaPill({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="flex flex-col items-center gap-1 rounded-xl bg-black/50 px-3 py-2.5">
       <span className="text-[10px] font-medium uppercase tracking-wider text-[#5a6785]">
         {label}
       </span>
-      {loading ? (
-        <div className="h-5 w-10 animate-pulse rounded bg-[#5f7bc838]" />
-      ) : (
-        <span className="text-sm font-semibold text-white">
-          {value || "\u2014"}
-        </span>
-      )}
+      <span className="text-sm font-semibold text-white">
+        {value != null ? String(value) : "\u2014"}
+      </span>
     </div>
   );
 }
 
 export function SongDetailModal({
   track,
-  meta,
   message,
   onMessageChange,
   boostAmount,
@@ -66,6 +44,10 @@ export function SongDetailModal({
   onClose,
   submitting,
 }: SongDetailModalProps) {
+  const albumArtLarge = track.album.images[0]?.url ?? "";
+  const albumArtMedium = track.album.images[1]?.url ?? albumArtLarge;
+  const artist = track.artists[0]?.name ?? "";
+
   // Lock body scroll while modal is open
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -111,17 +93,16 @@ export function SongDetailModal({
           <div className="relative mx-auto mb-5 w-fit">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={artworkUrl(track, 600)}
-              alt={track.trackName}
+              src={albumArtLarge}
+              alt={track.name}
               width={200}
               height={200}
               className="h-[200px] w-[200px] rounded-2xl object-cover shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
             />
-            {/* Glow effect behind artwork */}
             <div
               className="absolute inset-0 -z-10 scale-110 rounded-2xl opacity-30 blur-2xl"
               style={{
-                backgroundImage: `url(${artworkUrl(track, 300)})`,
+                backgroundImage: `url(${albumArtMedium})`,
                 backgroundSize: "cover",
               }}
             />
@@ -130,39 +111,27 @@ export function SongDetailModal({
           {/* Song info */}
           <div className="mb-4 text-center">
             <h3 className="text-xl font-bold leading-tight text-white">
-              {track.trackName}
+              {track.name}
             </h3>
             <p className="mt-1 text-[15px] text-[#b8c2db]">
-              {track.artistName}
+              {artist}
             </p>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-[#5f7bc838] bg-[#10151d] px-3 py-1 text-xs text-[#7f8db2]">
-                {track.collectionName}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#5f7bc838] bg-[#10151d] px-3 py-1 text-xs text-[#7f8db2]">
-                <Music2 className="h-3 w-3" />
-                {track.primaryGenreName}
+                {track.album.name}
               </span>
               <span className="inline-flex items-center rounded-full border border-[#5f7bc838] bg-[#10151d] px-3 py-1 text-xs text-[#7f8db2]">
-                {msToMin(track.trackTimeMillis)}
+                <Music2 className="mr-1.5 h-3 w-3" />
+                {msToMin(track.duration_ms)}
               </span>
             </div>
           </div>
 
-          {/* Metadata pills */}
-          <div className="mb-5 grid grid-cols-4 gap-2">
-            <MetaPill label="BPM" value={meta.data?.bpm} loading={meta.loading} />
-            <MetaPill label="Key" value={meta.data?.key} loading={meta.loading} />
-            <MetaPill
-              label="Camelot"
-              value={meta.data?.openKey}
-              loading={meta.loading}
-            />
-            <MetaPill
-              label="Time"
-              value={meta.data?.timeSig}
-              loading={meta.loading}
-            />
+          {/* Metadata pills — data comes from search results, no extra fetch needed */}
+          <div className="mb-5 grid grid-cols-3 gap-2">
+            <MetaPill label="BPM" value={track.bpm} />
+            <MetaPill label="Key" value={track.keyName} />
+            <MetaPill label="Time" value={track.timeSig ? `${track.timeSig}/4` : null} />
           </div>
 
           {/* Message */}

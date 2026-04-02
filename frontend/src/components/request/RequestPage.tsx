@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Music, Disc3, CheckCircle2 } from "lucide-react";
-import type { ItunesTrack } from "@/lib/itunes";
-import type { TrackMeta } from "@/lib/getsongbpm";
+import type { SpotifyTrack } from "@/lib/spotify";
 import { useDebounce } from "@/hooks/useDebounce";
 import { SearchBar } from "./SearchBar";
 import { TrackCard } from "./TrackCard";
@@ -15,27 +14,16 @@ type RequestPageProps = {
   userName: string;
 };
 
-type MetaState = {
-  loading: boolean;
-  data: TrackMeta | null;
-  error: string | null;
-};
-
 export function RequestPage({ eventId, eventName, userName }: RequestPageProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
-  const [tracks, setTracks] = useState<ItunesTrack[]>([]);
+  const [tracks, setTracks] = useState<SpotifyTrack[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debouncedQuery = useDebounce(query, 400);
 
-  const [selectedTrack, setSelectedTrack] = useState<ItunesTrack | null>(null);
-  const [meta, setMeta] = useState<MetaState>({
-    loading: false,
-    data: null,
-    error: null,
-  });
+  const [selectedTrack, setSelectedTrack] = useState<SpotifyTrack | null>(null);
   const [message, setMessage] = useState("");
   const [boostAmount, setBoostAmount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -53,45 +41,30 @@ export function RequestPage({ eventId, eventName, userName }: RequestPageProps) 
       .catch(() => { /* session will be retried on submit */ });
   }, [eventId, userName]);
 
-  // Search iTunes
+  // Search Spotify — AbortController cancels the previous inflight request
+  // when the query changes or when React StrictMode double-invokes the effect
   useEffect(() => {
     if (!debouncedQuery.trim()) {
       setTracks([]);
       setSearchError(null);
       return;
     }
+    const ac = new AbortController();
     setSearchLoading(true);
     setSearchError(null);
-    fetch(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=10`)
+    fetch(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=10`, { signal: ac.signal })
       .then((r) => r.json())
       .then((d) => {
         if (d.error) throw new Error(d.error);
         setTracks(d.tracks ?? []);
       })
-      .catch((e) => setSearchError(e.message))
+      .catch((e) => { if (e.name !== 'AbortError') setSearchError(e.message); })
       .finally(() => setSearchLoading(false));
+    return () => ac.abort();
   }, [debouncedQuery]);
-
-  // Fetch track metadata when selected
-  useEffect(() => {
-    if (!selectedTrack) return;
-    setMeta({ loading: true, data: null, error: null });
-    const params = new URLSearchParams({
-      title: selectedTrack.trackName,
-      artist: selectedTrack.artistName,
-    });
-    fetch(`/api/track-meta?${params}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error);
-        setMeta({ loading: false, data: d, error: null });
-      })
-      .catch((e) => setMeta({ loading: false, data: null, error: e.message }));
-  }, [selectedTrack]);
 
   const handleClose = useCallback(() => {
     setSelectedTrack(null);
-    setMeta({ loading: false, data: null, error: null });
     setMessage("");
     setBoostAmount(0);
   }, []);
@@ -224,7 +197,7 @@ export function RequestPage({ eventId, eventName, userName }: RequestPageProps) 
 
           {tracks.map((track, index) => (
             <TrackCard
-              key={track.trackId}
+              key={track.id}
               track={track}
               onClick={() => setSelectedTrack(track)}
               index={index}
@@ -237,7 +210,6 @@ export function RequestPage({ eventId, eventName, userName }: RequestPageProps) 
       {selectedTrack && !submitted && (
         <SongDetailModal
           track={selectedTrack}
-          meta={meta}
           message={message}
           onMessageChange={setMessage}
           boostAmount={boostAmount}
