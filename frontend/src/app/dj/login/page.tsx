@@ -1,27 +1,29 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function SignupPage() {
+export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function handleSignup(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       setMessage({ text: error.message, error: true })
+      setLoading(false)
     } else {
-      setMessage({ text: 'Account created! You can now log in.', error: false })
+      router.push('/dashboard')
     }
-    setLoading(false)
   }
 
   return (
@@ -40,10 +42,10 @@ export default function SignupPage() {
 
         {/* Card */}
         <div className="w-full rounded-2xl border border-white/10 bg-[#0f1623] p-8 shadow-xl">
-          <h1 className="mb-1 text-xl font-semibold text-white">Create your DJ account</h1>
-          <p className="mb-6 text-sm text-zinc-400">Start managing your crowd-powered queue</p>
+          <h1 className="mb-1 text-xl font-semibold text-white">Welcome back</h1>
+          <p className="mb-6 text-sm text-zinc-400">Log in to manage your events</p>
 
-          <form onSubmit={handleSignup} className="flex flex-col gap-4">
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-zinc-300">Email</label>
               <input
@@ -73,28 +75,19 @@ export default function SignupPage() {
               </p>
             )}
 
-            {message && !message.error ? (
-              <a
-                href="/auth/login"
-                className="mt-1 block rounded-lg bg-red-600 py-2.5 text-center font-semibold text-white transition hover:bg-red-500"
-              >
-                Go to Login
-              </a>
-            ) : (
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-1 rounded-lg bg-red-600 py-2.5 font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
-              >
-                {loading ? 'Creating account...' : 'Sign Up'}
-              </button>
-            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-1 rounded-lg bg-red-600 py-2.5 font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+            >
+              {loading ? 'Logging in...' : 'Log In'}
+            </button>
           </form>
 
           <p className="mt-5 text-center text-sm text-zinc-500">
-            Already have an account?{' '}
-            <a href="/auth/login" className="font-medium text-white hover:text-red-400 transition">
-              Log in
+            Don&apos;t have an account?{' '}
+            <a href="/dj/signup" className="font-medium text-white hover:text-red-400 transition">
+              Sign up
             </a>
           </p>
         </div>
