@@ -53,9 +53,9 @@ type DashboardProps = {
   eventId: string;
 };
 
-// Maps a Supabase requests row (with joined tracks + guest_sessions) to DashboardRequest
+// Maps a Supabase requests row (with track_data jsonb + guest_sessions) to DashboardRequest
 function mapRow(row: Record<string, unknown>): DashboardRequest {
-  const track = (row.tracks ?? {}) as Record<string, unknown>;
+  const track = (row.track_data ?? {}) as Record<string, unknown>;
   const session = (row.guest_sessions ?? {}) as Record<string, unknown>;
   return {
     id: String(row.id),
@@ -71,7 +71,7 @@ function mapRow(row: Record<string, unknown>): DashboardRequest {
     status: (row.status ?? "pending") as RequestStatus,
     priorityScore:
       typeof row.priority_score === "number" ? row.priority_score : null,
-    bpm: typeof track.bpm === "number" ? track.bpm : null,
+    bpm: track.bpm != null ? Number(track.bpm) : null,
     key: track.key ? String(track.key) : null,
   };
 }
@@ -95,7 +95,7 @@ export function Dashboard({ eventId }: DashboardProps) {
     // 1. Load existing pending requests
     supabase
       .from("requests")
-      .select("*, tracks(*), guest_sessions(display_name)")
+      .select("*, guest_sessions(display_name)")
       .eq("event_id", eventId)
       .eq("status", "pending")
       .order("priority_score", { ascending: false })
@@ -123,7 +123,7 @@ export function Dashboard({ eventId }: DashboardProps) {
           // Fetch the full row with joins since INSERT payload lacks track/session data
           supabase
             .from("requests")
-            .select("*, tracks(*), guest_sessions(display_name)")
+            .select("*, guest_sessions(display_name)")
             .eq("id", (payload.new as { id: string }).id)
             .single()
             .then(({ data }) => {
