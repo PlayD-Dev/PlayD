@@ -19,7 +19,7 @@ export default function SignupPage() {
     if (error) {
       setMessage({ text: error.message, error: true })
     } else {
-      setMessage({ text: 'Account created! Check your email to confirm.', error: false })
+      setMessage({ text: 'Account created! You can now log in.', error: false })
     }
     setLoading(false)
   }
@@ -73,13 +73,22 @@ export default function SignupPage() {
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-1 rounded-lg bg-red-600 py-2.5 font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
-            >
-              {loading ? 'Creating account...' : 'Sign Up'}
-            </button>
+            {message && !message.error ? (
+              <a
+                href="/auth/login"
+                className="mt-1 block rounded-lg bg-red-600 py-2.5 text-center font-semibold text-white transition hover:bg-red-500"
+              >
+                Go to Login
+              </a>
+            ) : (
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-1 rounded-lg bg-red-600 py-2.5 font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+              >
+                {loading ? 'Creating account...' : 'Sign Up'}
+              </button>
+            )}
           </form>
 
           <p className="mt-5 text-center text-sm text-zinc-500">
