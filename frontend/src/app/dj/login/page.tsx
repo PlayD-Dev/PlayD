@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
@@ -14,14 +16,14 @@ export default function LoginPage() {
     setLoading(true)
     setMessage(null)
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       setMessage({ text: error.message, error: true })
+      setLoading(false)
     } else {
-      setMessage({ text: `Logged in as ${data.user?.email}`, error: false })
+      router.push('/dashboard')
     }
-    setLoading(false)
   }
 
   return (
@@ -84,7 +86,7 @@ export default function LoginPage() {
 
           <p className="mt-5 text-center text-sm text-zinc-500">
             Don&apos;t have an account?{' '}
-            <a href="/auth/signup" className="font-medium text-white hover:text-red-400 transition">
+            <a href="/dj/signup" className="font-medium text-white hover:text-red-400 transition">
               Sign up
             </a>
           </p>
