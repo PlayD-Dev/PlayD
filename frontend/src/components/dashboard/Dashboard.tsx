@@ -12,13 +12,14 @@ import {
   Save,
   XCircle,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { DetailStat } from "@/components/dashboard/DetailStat";
 import { PaidBadge } from "@/components/dashboard/PaidBadge";
 import { RequestCard } from "@/components/dashboard/RequestCard";
 import { StatCard } from "@/components/dashboard/StatCard";
-import type { DashboardRequest } from "@/lib/requests";
+import { supabase } from "@/lib/supabase";
+import type { DashboardRequest, RequestStatus } from "@/lib/requests";
 import {
   formatWaitFromSubmittedAt,
   getPaidOrFree,
@@ -49,24 +50,111 @@ const sortFilters: Array<{
 ];
 
 type DashboardProps = {
-  initialRequests: DashboardRequest[];
+  eventId: string;
 };
+
+// Maps a Supabase requests row (with track_data jsonb + guest_sessions) to DashboardRequest
+function mapRow(row: Record<string, unknown>): DashboardRequest {
+  const track = (row.track_data ?? {}) as Record<string, unknown>;
+  const session = (row.guest_sessions ?? {}) as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    title: String(track.title ?? ""),
+    artist: String(track.artist ?? ""),
+    requesterName: String(session.display_name ?? "Guest"),
+    message: row.message ? String(row.message) : undefined,
+    paidAmount:
+      typeof row.priority_score === "number" && row.priority_score > 0
+        ? row.priority_score
+        : null,
+    submittedAt: String(row.submitted_at ?? new Date().toISOString()),
+    status: (row.status ?? "pending") as RequestStatus,
+    priorityScore:
+      typeof row.priority_score === "number" ? row.priority_score : null,
+    bpm: track.bpm != null ? Number(track.bpm) : null,
+    key: track.key ? String(track.key) : null,
+  };
+}
 
 const CARD_ENTRY_DURATION_MS = 620;
 const CARD_STAGGER_DELAY_MS = 72;
 
 /** Main DJ dashboard view that manages request state, filters, sorting, and selection. */
-export function Dashboard({ initialRequests }: DashboardProps) {
-  const [requests, setRequests] = useState<DashboardRequest[]>(initialRequests);
+export function Dashboard({ eventId }: DashboardProps) {
+  const [requests, setRequests] = useState<DashboardRequest[]>([]);
   const [typeFilter, setTypeFilter] = useState<RequestFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("priority");
-  const [selectedId, setSelectedId] = useState<string>(
-    initialRequests[0]?.id ?? "",
-  );
+  const [selectedId, setSelectedId] = useState<string>("");
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const previousCardTops = useRef<Map<string, number>>(new Map());
   const isFirstListPaint = useRef(true);
   const pendingEntryCleanup = useRef<number[]>([]);
+
+  // Initial fetch + Supabase Realtime subscription
+  useEffect(() => {
+    // 1. Load existing pending requests
+    supabase
+      .from("requests")
+      .select("*, guest_sessions(display_name)")
+      .eq("event_id", eventId)
+      .eq("status", "pending")
+      .order("priority_score", { ascending: false })
+      .order("submitted_at", { ascending: true })
+      .then(({ data }) => {
+        if (data) {
+          const mapped = data.map(mapRow);
+          setRequests(mapped);
+          setSelectedId(mapped[0]?.id ?? "");
+        }
+      });
+
+    // 2. Subscribe to real-time changes on this event's requests
+    const channel = supabase
+      .channel(`requests:event:${eventId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "requests",
+          filter: `event_id=eq.${eventId}`,
+        },
+        (payload) => {
+          // Fetch the full row with joins since INSERT payload lacks track/session data
+          supabase
+            .from("requests")
+            .select("*, guest_sessions(display_name)")
+            .eq("id", (payload.new as { id: string }).id)
+            .single()
+            .then(({ data }) => {
+              if (data) {
+                setRequests((prev) => [mapRow(data as Record<string, unknown>), ...prev]);
+                setSelectedId((prev) => prev || (data as { id: string }).id);
+              }
+            });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "requests",
+          filter: `event_id=eq.${eventId}`,
+        },
+        (payload) => {
+          // Remove updated request from the pending queue (it was acted on)
+          setRequests((prev) =>
+            prev.filter((r) => r.id !== (payload.new as { id: string }).id),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId]);
 
   const filteredRequests = useMemo(() => {
     const byType =
@@ -168,16 +256,15 @@ export function Dashboard({ initialRequests }: DashboardProps) {
   const paidBoosts = requests.filter((request) => (request.paidAmount ?? 0) > 0).length;
   const freeRequests = requests.filter((request) => (request.paidAmount ?? 0) === 0).length;
 
-  function handleRequestAction(id: string) {
+  function handleRequestAction(id: string, status: RequestStatus) {
+    // Optimistically update local state immediately
     setRequests((current) => {
       const updated = current.filter((request) => request.id !== id);
 
       const currentVisibleRequests = sortRequests(
-        (
-          typeFilter === "all"
-            ? current
-            : current.filter((request) => getPaidOrFree(request) === typeFilter)
-        ),
+        typeFilter === "all"
+          ? current
+          : current.filter((request) => getPaidOrFree(request) === typeFilter),
         sortKey,
       );
 
@@ -186,11 +273,9 @@ export function Dashboard({ initialRequests }: DashboardProps) {
       );
 
       const nextVisibleRequests = sortRequests(
-        (
-          typeFilter === "all"
-            ? updated
-            : updated.filter((request) => getPaidOrFree(request) === typeFilter)
-        ),
+        typeFilter === "all"
+          ? updated
+          : updated.filter((request) => getPaidOrFree(request) === typeFilter),
         sortKey,
       );
 
@@ -204,6 +289,13 @@ export function Dashboard({ initialRequests }: DashboardProps) {
 
       return updated;
     });
+
+    // Persist status to Supabase (fire-and-forget)
+    fetch(`/api/requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).catch(console.error);
   }
 
   return (
@@ -363,25 +455,25 @@ export function Dashboard({ initialRequests }: DashboardProps) {
                     label="Mark Seen"
                     tone="blue"
                     icon={Eye}
-                    onClick={() => handleRequestAction(activeRequest.id)}
+                    onClick={() => handleRequestAction(activeRequest.id, "seen")}
                   />
                   <ActionButton
                     label="Save"
                     tone="amber"
                     icon={Save}
-                    onClick={() => handleRequestAction(activeRequest.id)}
+                    onClick={() => handleRequestAction(activeRequest.id, "saved")}
                   />
                   <ActionButton
                     label="Play"
                     tone="green"
                     icon={Check}
-                    onClick={() => handleRequestAction(activeRequest.id)}
+                    onClick={() => handleRequestAction(activeRequest.id, "played")}
                   />
                   <ActionButton
                     label="Skip"
                     tone="red"
                     icon={XCircle}
-                    onClick={() => handleRequestAction(activeRequest.id)}
+                    onClick={() => handleRequestAction(activeRequest.id, "skipped")}
                   />
                 </div>
               </>

@@ -30,6 +30,9 @@ export default function RootLayout({
         className={`${poppins.variable} ${dmSans.variable} antialiased`}
       >
         {children}
+        <footer style={{ textAlign: 'center', padding: '1rem', fontSize: '0.75rem', color: '#888' }}>
+          BPM data powered by <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer">GetSongBPM</a>
+        </footer>
       </body>
     </html>
   );
