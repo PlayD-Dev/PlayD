@@ -5,8 +5,13 @@ import { supabaseAdmin } from '@/lib/supabase-server'
  * PATCH /api/events/[id]
  * Body: { status: 'ended' }
  *
- * Ends an event: archives paid requests, deletes free requests + guest sessions,
- * then marks the event as ended via the end-event Edge Function.
+ * Ends an event:
+ * 1. Delete all requests for the event
+ * 2. Delete all guest sessions for the event
+ * 3. Mark the event as ended
+ *
+ * The Supabase Realtime UPDATE on the events row triggers the guest-side
+ * "event ended" overlay automatically.
  */
 export async function PATCH(
   req: NextRequest,
@@ -19,7 +24,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Only status "ended" is supported' }, { status: 400 })
   }
 
-  // Verify event exists
+  // Verify event exists and isn't already ended
   const { data: event, error: eventError } = await supabaseAdmin
     .from('events')
     .select('id, status')
@@ -34,22 +39,37 @@ export async function PATCH(
     return NextResponse.json({ error: 'Event is already ended' }, { status: 409 })
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  // 1. Delete all requests for this event
+  const { error: deleteRequestsError } = await supabaseAdmin
+    .from('requests')
+    .delete()
+    .eq('event_id', eventId)
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/end-event`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({ eventId }),
-  })
+  if (deleteRequestsError) {
+    console.error('[end-event] delete requests error:', deleteRequestsError)
+    return NextResponse.json({ error: 'Failed to clear requests' }, { status: 500 })
+  }
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    console.error('[/api/events/[id]] end-event function error:', err)
-    return NextResponse.json({ error: 'Failed to end event' }, { status: 502 })
+  // 2. Delete all guest sessions for this event
+  const { error: deleteSessionsError } = await supabaseAdmin
+    .from('guest_sessions')
+    .delete()
+    .eq('event_id', eventId)
+
+  if (deleteSessionsError) {
+    console.error('[end-event] delete sessions error:', deleteSessionsError)
+    return NextResponse.json({ error: 'Failed to clear sessions' }, { status: 500 })
+  }
+
+  // 3. Mark the event as ended — this UPDATE triggers the guest Realtime subscription
+  const { error: updateError } = await supabaseAdmin
+    .from('events')
+    .update({ status: 'ended', ended_at: new Date().toISOString() })
+    .eq('id', eventId)
+
+  if (updateError) {
+    console.error('[end-event] event update error:', updateError)
+    return NextResponse.json({ error: 'Failed to end event' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })
