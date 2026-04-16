@@ -6,10 +6,10 @@ import { supabaseAdmin } from '@/lib/supabase-server'
  * Body: { status: 'ended' }
  *
  * Ends an event:
- * 1. Delete all requests for the event
- * 2. Delete all guest sessions for the event
- * 3. Mark the event as ended
+ * 1. Delete all guest sessions for the event (PII cleanup)
+ * 2. Mark the event as ended
  *
+ * Requests (all statuses) are preserved as event history.
  * The Supabase Realtime UPDATE on the events row triggers the guest-side
  * "event ended" overlay automatically.
  */
@@ -39,18 +39,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'Event is already ended' }, { status: 409 })
   }
 
-  // 1. Delete all requests for this event
-  const { error: deleteRequestsError } = await supabaseAdmin
-    .from('requests')
-    .delete()
-    .eq('event_id', eventId)
-
-  if (deleteRequestsError) {
-    console.error('[end-event] delete requests error:', deleteRequestsError)
-    return NextResponse.json({ error: 'Failed to clear requests' }, { status: 500 })
-  }
-
-  // 2. Delete all guest sessions for this event
+  // 1. Delete all guest sessions for this event (PII — not needed post-event)
+  // Note: requests are intentionally kept — all statuses (including pending) are preserved as event history
   const { error: deleteSessionsError } = await supabaseAdmin
     .from('guest_sessions')
     .delete()
@@ -61,7 +51,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Failed to clear sessions' }, { status: 500 })
   }
 
-  // 3. Mark the event as ended — this UPDATE triggers the guest Realtime subscription
+  // 2. Mark the event as ended — this UPDATE triggers the guest Realtime subscription
   const { error: updateError } = await supabaseAdmin
     .from('events')
     .update({ status: 'ended', ended_at: new Date().toISOString() })

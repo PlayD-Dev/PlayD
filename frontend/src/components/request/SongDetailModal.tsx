@@ -14,6 +14,7 @@ type SongDetailModalProps = {
   onSubmit: () => void;
   onClose: () => void;
   submitting: boolean;
+  error?: string | null;
 };
 
 function msToMin(ms: number): string {
@@ -43,6 +44,7 @@ export function SongDetailModal({
   onSubmit,
   onClose,
   submitting,
+  error,
 }: SongDetailModalProps) {
   const albumArtLarge = track.album.images[0]?.url ?? "";
   const albumArtMedium = track.album.images[1]?.url ?? albumArtLarge;
@@ -149,6 +151,13 @@ export function SongDetailModal({
           <div className="mb-5">
             <BoostSelector selected={boostAmount} onChange={onBoostChange} />
           </div>
+
+          {/* Submit error */}
+          {error && (
+            <p className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
+              {error}
+            </p>
+          )}
 
           {/* Submit */}
           <button

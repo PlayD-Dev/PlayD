@@ -69,6 +69,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
   const [boostAmount, setBoostAmount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Realtime state
   const [eventEnded, setEventEnded] = useState(false);
@@ -77,12 +78,29 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
   // ─── Session bootstrap ──────────────────────────────────────────────────────
   useEffect(() => {
     const stored = loadStoredSession(eventId);
-    if (stored) {
-      setSessionId(stored.sessionId);
-      setDisplayName(stored.displayName);
-    } else {
+    if (!stored) {
       setShowNamePrompt(true);
+      return;
     }
+
+    // Validate stored session still exists in DB (it gets deleted when event ends)
+    fetch(`/api/sessions?id=${stored.sessionId}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.valid) {
+          setSessionId(stored.sessionId);
+          setDisplayName(stored.displayName);
+        } else {
+          // Session was deleted (event ended and restarted, or expired) — ask for name again
+          try { localStorage.removeItem(sessionKey(eventId)); } catch { /* ignore */ }
+          setShowNamePrompt(true);
+        }
+      })
+      .catch(() => {
+        // Network error — optimistically use stored session, let submit fail with proper error if needed
+        setSessionId(stored.sessionId);
+        setDisplayName(stored.displayName);
+      });
   }, [eventId]);
 
   async function handleNameSubmit(e: React.FormEvent) {
@@ -202,12 +220,14 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
     setSelectedTrack(null);
     setMessage("");
     setBoostAmount(0);
+    setSubmitError(null);
   }, []);
 
   // ─── Submit request ─────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (!selectedTrack || !sessionId) return;
     setSubmitting(true);
+    setSubmitError(null);
 
     try {
       const res = await fetch("/api/requests", {
@@ -215,12 +235,14 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ eventId, sessionId, track: selectedTrack, message, boostAmount }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
       setSubmitted(true);
       setTimeout(() => { setSubmitted(false); handleClose(); }, 1800);
-    } catch {
-      setSubmitted(true);
-      setTimeout(() => { setSubmitted(false); handleClose(); }, 1800);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to send request. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -370,6 +392,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
           onSubmit={handleSubmit}
           onClose={handleClose}
           submitting={submitting}
+          error={submitError}
         />
       )}
 

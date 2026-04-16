@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
 
 /**
+ * GET /api/sessions?id=<sessionId>
+ * Checks whether a guest session still exists in the DB.
+ * Returns: { valid: true } or { valid: false }
+ */
+export async function GET(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get('id')?.trim()
+  if (!id) return NextResponse.json({ valid: false })
+
+  const { data } = await supabaseAdmin
+    .from('guest_sessions')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+
+  return NextResponse.json({ valid: !!data })
+}
+
+/**
  * POST /api/sessions
  * Creates a guest session for an event.
  * Body: { eventId: string, displayName: string }

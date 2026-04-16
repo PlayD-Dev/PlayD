@@ -52,6 +52,210 @@ const sortFilters: Array<{
   { label: "BPM", value: "bpm", icon: Music2 },
 ];
 
+type PastEvent = {
+  id: string;
+  name: string;
+  event_code: string;
+  started_at: string;
+  ended_at: string | null;
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDuration(startIso: string, endIso: string | null): string {
+  if (!endIso) return "";
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  const totalMins = Math.round(ms / 60_000);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+type SetlistEntry = {
+  id: string;
+  status: string;
+  submitted_at: string;
+  resolved_at: string | null;
+  priority_score: number | null;
+  track_data: {
+    title?: string;
+    artist?: string;
+    albumArt?: string;
+    bpm?: number | null;
+    key?: string | null;
+  };
+};
+
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  played:  { label: "Played",    className: "bg-green-500/15 text-green-400 border-green-500/20" },
+  skipped: { label: "Skipped",   className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/20" },
+  saved:   { label: "Saved",     className: "bg-amber-500/15 text-amber-400 border-amber-500/20" },
+  seen:    { label: "Seen",      className: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
+  pending: { label: "Requested", className: "bg-white/5 text-zinc-500 border-white/10" },
+};
+
+function HistoryModal({
+  event,
+  onClose,
+}: {
+  event: PastEvent;
+  onClose: () => void;
+}) {
+  const [entries, setEntries] = useState<SetlistEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from("requests")
+      .select("id, status, submitted_at, resolved_at, priority_score, track_data")
+      .eq("event_id", event.id)
+      .order("submitted_at", { ascending: true })
+      .then(({ data }) => {
+        setEntries((data ?? []) as SetlistEntry[]);
+        setLoading(false);
+      });
+  }, [event.id]);
+
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0f1623] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-white/5 px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-white">{event.name}</h2>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              {formatDate(event.started_at)}
+              {event.ended_at && <span> · {formatDuration(event.started_at, event.ended_at)}</span>}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-0.5 shrink-0 text-zinc-500 transition hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Setlist */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {loading && (
+            <div className="flex flex-col gap-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3.5 rounded-2xl bg-white/5 p-3.5">
+                  <div className="h-12 w-12 shrink-0 animate-pulse rounded-xl bg-white/10" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && entries.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <div className="text-4xl opacity-30">♪</div>
+              <p className="text-sm text-zinc-500">No songs were played at this event.</p>
+            </div>
+          )}
+
+          {!loading && entries.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {entries.map((entry, index) => {
+                const track = entry.track_data ?? {};
+                const badge = STATUS_BADGE[entry.status];
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-center gap-3.5 rounded-2xl border border-white/5 bg-white/[0.03] p-3.5"
+                  >
+                    {/* Index */}
+                    <span className="w-5 shrink-0 text-center text-xs text-zinc-600">
+                      {index + 1}
+                    </span>
+
+                    {/* Album art */}
+                    {track.albumArt ? (
+                      <Image
+                        src={track.albumArt}
+                        alt={track.title ?? ""}
+                        width={48}
+                        height={48}
+                        className="h-12 w-12 shrink-0 rounded-xl object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5 text-zinc-600">
+                        <Music2 className="h-5 w-5" />
+                      </div>
+                    )}
+
+                    {/* Track info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white">
+                        {track.title ?? "Unknown"}
+                      </p>
+                      <p className="truncate text-xs text-zinc-500">
+                        {track.artist ?? "Unknown artist"}
+                        {track.bpm ? <span> · {track.bpm} BPM</span> : null}
+                      </p>
+                    </div>
+
+                    {/* Status badge */}
+                    {badge && (
+                      <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                    )}
+
+                    {/* Boost */}
+                    {(entry.priority_score ?? 0) > 0 && (
+                      <span className="shrink-0 text-xs font-semibold text-[#b72959]">
+                        +${entry.priority_score}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer summary */}
+        {!loading && entries.length > 0 && (
+          <div className="border-t border-white/5 px-6 py-3 text-xs text-zinc-600">
+            {entries.length} total ·{" "}
+            {entries.filter(e => e.status === "played").length} played ·{" "}
+            {entries.filter(e => e.status === "skipped").length} skipped ·{" "}
+            {entries.filter(e => e.status === "pending").length} unreplied
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type DashboardProps = {
   eventId: string | null;
   eventCode: string | null;
@@ -109,6 +313,25 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
 
   // QR modal state
   const [showQR, setShowQR] = useState(false);
+
+  // Past events state
+  const [pastEvents, setPastEvents] = useState<PastEvent[]>([]);
+  const [selectedPastEvent, setSelectedPastEvent] = useState<PastEvent | null>(null);
+
+  // Fetch past events whenever there is no live event
+  useEffect(() => {
+    if (eventId) return;
+
+    supabase
+      .from("events")
+      .select("id, name, event_code, started_at, ended_at")
+      .eq("dj_id", djId)
+      .eq("status", "ended")
+      .order("ended_at", { ascending: false })
+      .then(({ data }) => {
+        if (data) setPastEvents(data as PastEvent[]);
+      });
+  }, [eventId, djId]);
 
   // Initial fetch + Supabase Realtime subscription
   useEffect(() => {
@@ -376,6 +599,14 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
 
   return (
     <main className="min-h-screen bg-[#020202] px-6 py-7 text-white md:px-8">
+      {/* Past event history modal */}
+      {selectedPastEvent && (
+        <HistoryModal
+          event={selectedPastEvent}
+          onClose={() => setSelectedPastEvent(null)}
+        />
+      )}
+
       {/* QR Code modal */}
       {showQR && eventId && (
         <div
@@ -429,13 +660,17 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
 
       <div className="mx-auto max-w-[1600px]">
         <div className="mb-6 flex items-center justify-between gap-4">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-base font-medium text-[#aab7d8] transition hover:text-white"
-          >
-            <span aria-hidden="true" className="text-lg">←</span>
-            <span>Exit Dashboard</span>
-          </Link>
+          {eventId ? (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-base font-medium text-[#aab7d8] transition hover:text-white"
+            >
+              <span aria-hidden="true" className="text-lg">←</span>
+              <span>Exit Dashboard</span>
+            </Link>
+          ) : (
+            <div />
+          )}
 
           <div className="flex items-center gap-4">
             {eventId && (
@@ -485,13 +720,14 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
 
         <div className="mb-6 flex items-center gap-4">
           <Headphones className="h-12 w-12 text-[#a61e4d]" />
-          <h1 className="text-4xl font-bold tracking-tight md:text-5xl">Dashboard</h1>
+          <h1 className="text-4xl font-bold tracking-tight md:text-5xl">{eventId ? "Dashboard" : "Event Manager"}</h1>
         </div>
 
-        {/* No active event — show create form */}
+        {/* No active event — show create form + past events */}
         {!eventId && (
-          <div className="grid min-h-[420px] place-items-center">
-            <div className="w-full max-w-sm text-center">
+          <div className="mx-auto max-w-sm">
+            {/* Create form */}
+            <div className="mb-10 text-center">
               <div className="mb-4 text-6xl opacity-40">♪</div>
               <p className="mb-1 text-xl font-semibold text-white">Start a new event</p>
               <p className="mb-8 text-sm text-zinc-500">Give your event a name and go live. Guests scan the QR code to join.</p>
@@ -517,6 +753,38 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
                 </button>
               </form>
             </div>
+
+            {/* Past events */}
+            {pastEvents.length > 0 && (
+              <div>
+                <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-zinc-600">
+                  Past Events
+                </p>
+                <div className="flex flex-col gap-3">
+                  {pastEvents.map((event) => (
+                    <button
+                      key={event.id}
+                      type="button"
+                      onClick={() => setSelectedPastEvent(event)}
+                      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-white/5 bg-[#10151d] px-5 py-4 text-left transition hover:border-white/10 hover:bg-white/5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-white">{event.name}</p>
+                        <p className="mt-0.5 text-sm text-zinc-500">
+                          {formatDate(event.started_at)}
+                          {event.ended_at && (
+                            <span> · {formatDuration(event.started_at, event.ended_at)}</span>
+                          )}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-xs font-semibold tracking-widest text-zinc-400">
+                        {event.event_code}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
