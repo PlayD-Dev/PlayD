@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supabaseAdmin
     .from('dj_profiles')
-    .insert({ id: userId, email, dj_name: djName })
+    .upsert({ id: userId, email, dj_name: djName }, { onConflict: 'id', ignoreDuplicates: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

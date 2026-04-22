@@ -20,6 +20,19 @@ export default function Page() {
         return
       }
 
+      // Google OAuth users have no dj_profiles row on first login — send them
+      // to the profile completion page to pick a DJ name before continuing.
+      const { data: profile } = await supabase
+        .from('dj_profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!profile) {
+        router.replace('/dj/complete-profile')
+        return
+      }
+
       setDjId(user.id)
 
       // Find this DJ's live event. dj_profiles.id = auth.uid() per our signup flow.
