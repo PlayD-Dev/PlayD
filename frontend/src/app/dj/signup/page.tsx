@@ -8,6 +8,7 @@ export default function SignupPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [djName, setDjName] = useState('')
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -23,13 +24,42 @@ export default function SignupPage() {
     setLoading(true)
     setMessage(null)
 
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password })
 
     if (error) {
       setMessage({ text: error.message, error: true })
       setLoading(false)
-    } else {
+      return
+    }
+
+    const userId = data.user?.id
+    if (!userId) {
+      setMessage({ text: 'Account created! Check your email to confirm, then log in.', error: false })
+      setLoading(false)
+      return
+    }
+
+    // Create the dj_profiles row with id = auth.uid() so events can join on dj_id
+    const res = await fetch('/api/dj/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, email, djName }),
+    })
+
+    if (!res.ok) {
+      const body = await res.json()
+      setMessage({ text: body.error ?? 'Failed to create profile', error: true })
+      setLoading(false)
+      return
+    }
+
+    // If Supabase returned a session, the user is confirmed and logged in — go straight to dashboard
+    if (data.session) {
       router.push('/dashboard')
+    } else {
+      // Email confirmation is enabled — user must confirm before logging in
+      setMessage({ text: 'Account created! Check your email to confirm, then log in.', error: false })
+      setLoading(false)
     }
   }
 
@@ -73,6 +103,17 @@ export default function SignupPage() {
           </div>
 
           <form onSubmit={handleSignup} className="flex flex-col gap-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">DJ Name</label>
+              <input
+                type="text"
+                required
+                value={djName}
+                onChange={(e) => setDjName(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-zinc-600 outline-none transition focus:border-red-600/60 focus:ring-1 focus:ring-red-600/40"
+                placeholder="DJ Velvet"
+              />
+            </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-zinc-300">Email</label>
               <input

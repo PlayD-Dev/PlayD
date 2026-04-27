@@ -44,12 +44,12 @@ export async function POST(req: NextRequest) {
       priority_score: typeof boostAmount === 'number' ? boostAmount : 0,
       status:         'pending',
     })
-    .select('*, guest_sessions(display_name)')
+    .select('id, event_id, session_id, status, track_data')
     .single()
 
   if (requestError || !request) {
     console.error('Request insert error:', requestError)
-    return NextResponse.json({ error: 'Failed to submit request' }, { status: 500 })
+    return NextResponse.json({ error: requestError?.message ?? 'Failed to submit request' }, { status: 500 })
   }
 
   return NextResponse.json({ request }, { status: 201 })
