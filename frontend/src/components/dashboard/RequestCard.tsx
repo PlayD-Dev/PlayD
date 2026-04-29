@@ -1,7 +1,4 @@
-import {
-  MessageSquare,
-  Music4,
-} from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { PaidBadge } from "@/components/dashboard/PaidBadge";
 import type { DashboardRequest } from "@/lib/requests";
 import {
@@ -51,13 +48,22 @@ export function RequestCard({
 
       <div className="flex flex-wrap items-center gap-5 text-base text-[#bcc6df]">
         <span className="inline-flex items-center gap-1.5">
-          <Music4 className="h-4 w-4" />
+          <span>🥁</span>
           <span>{request.bpm ?? "—"} BPM</span>
         </span>
 
-        <span>{request.key ?? "—"}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span>🎵</span>
+          <span>{request.key ?? "—"}</span>
+        </span>
 
-        <span>{request.requesterName}</span>
+        {request.requestCount > 1 ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#b72959]/15 px-2 py-0.5 text-sm font-medium text-[#e06090]">
+            {request.requestCount} guests
+          </span>
+        ) : (
+          <span>{request.requesterName}</span>
+        )}
 
         {request.message?.trim() ? (
           <MessageSquare className="h-4 w-4 text-[#a61e4d]" />

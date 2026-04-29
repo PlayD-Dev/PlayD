@@ -269,8 +269,12 @@ type DashboardProps = {
 function mapRow(row: Record<string, unknown>): DashboardRequest {
   const track = (row.track_data ?? {}) as Record<string, unknown>;
   const session = (row.guest_sessions ?? {}) as Record<string, unknown>;
+  const id = String(row.id);
   return {
-    id: String(row.id),
+    id,
+    requestIds: [id],
+    spotifyId: String(track.spotifyId ?? ""),
+    requestCount: 1,
     title: String(track.title ?? ""),
     artist: String(track.artist ?? ""),
     requesterName: String(session.display_name ?? "Guest"),
@@ -286,6 +290,28 @@ function mapRow(row: Record<string, unknown>): DashboardRequest {
     bpm: track.bpm != null ? Number(track.bpm) : null,
     key: track.key ? String(track.key) : null,
   };
+}
+
+/** Merge requests for the same song into one entry, keeping highest-priority as primary. */
+function groupBySpotifyId(requests: DashboardRequest[]): DashboardRequest[] {
+  const groups = new Map<string, DashboardRequest[]>();
+  for (const req of requests) {
+    const key = req.spotifyId || req.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(req);
+  }
+  return Array.from(groups.values()).map((group) => {
+    const primary = group[0];
+    const totalPaid = group.reduce((sum, r) => sum + (r.paidAmount ?? 0), 0);
+    const totalPriority = group.reduce((sum, r) => sum + (r.priorityScore ?? 0), 0);
+    return {
+      ...primary,
+      requestIds: group.map((r) => r.id),
+      requestCount: group.length,
+      paidAmount: totalPaid > 0 ? totalPaid : null,
+      priorityScore: totalPriority,
+    };
+  });
 }
 
 const CARD_ENTRY_DURATION_MS = 620;
@@ -406,12 +432,11 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
   }, [eventId]);
 
   const filteredRequests = useMemo(() => {
-    const byType =
-      typeFilter === "all"
-        ? requests
-        : requests.filter((request) => getPaidOrFree(request) === typeFilter);
-
-    return sortRequests(byType, sortKey);
+    const sorted = sortRequests(requests, sortKey);
+    const grouped = groupBySpotifyId(sorted);
+    return typeFilter === "all"
+      ? grouped
+      : grouped.filter((request) => getPaidOrFree(request) === typeFilter);
   }, [requests, typeFilter, sortKey]);
 
   const fallbackRequest = filteredRequests[0] ?? null;
@@ -505,33 +530,35 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
   const paidBoosts = requests.filter((request) => (request.paidAmount ?? 0) > 0).length;
   const freeRequests = requests.filter((request) => (request.paidAmount ?? 0) === 0).length;
 
-  function handleRequestAction(id: string, status: RequestStatus) {
-    // Optimistically update local state immediately
-    setRequests((current) => {
-      const updated = current.filter((request) => request.id !== id);
+  function handleRequestAction(requestIds: string[], status: RequestStatus) {
+    const idSet = new Set(requestIds);
 
-      const currentVisibleRequests = sortRequests(
+    // Optimistically remove all IDs in the group from local state
+    setRequests((current) => {
+      const updated = current.filter((request) => !idSet.has(request.id));
+
+      const currentGrouped = groupBySpotifyId(sortRequests(
         typeFilter === "all"
           ? current
           : current.filter((request) => getPaidOrFree(request) === typeFilter),
         sortKey,
+      ));
+
+      const currentIndex = currentGrouped.findIndex(
+        (request) => request.requestIds.some((id) => idSet.has(id)),
       );
 
-      const currentIndex = currentVisibleRequests.findIndex(
-        (request) => request.id === id,
-      );
-
-      const nextVisibleRequests = sortRequests(
+      const nextGrouped = groupBySpotifyId(sortRequests(
         typeFilter === "all"
           ? updated
           : updated.filter((request) => getPaidOrFree(request) === typeFilter),
         sortKey,
-      );
+      ));
 
       const nextSelected =
-        nextVisibleRequests[currentIndex] ??
-        nextVisibleRequests[currentIndex - 1] ??
-        nextVisibleRequests[0] ??
+        nextGrouped[currentIndex] ??
+        nextGrouped[currentIndex - 1] ??
+        nextGrouped[0] ??
         null;
 
       setSelectedId(nextSelected?.id ?? "");
@@ -539,12 +566,14 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
       return updated;
     });
 
-    // Persist status to Supabase (fire-and-forget)
-    fetch(`/api/requests/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    }).catch(console.error);
+    // Patch all IDs in the group (fire-and-forget)
+    requestIds.forEach((id) => {
+      fetch(`/api/requests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      }).catch(console.error);
+    });
   }
 
   async function handleCreateEvent(e: React.FormEvent) {
@@ -875,6 +904,9 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
                         <p className="mb-1 text-lg text-[#b6c0d6]">{activeRequest.artist}</p>
                         <span className="text-sm text-[#7f8db2]">
                           Requested by {activeRequest.requesterName}
+                          {activeRequest.requestCount > 1 && (
+                            <span> + {activeRequest.requestCount - 1} other{activeRequest.requestCount > 2 ? "s" : ""}</span>
+                          )}
                         </span>
                       </div>
                       {getPaidOrFree(activeRequest) === "paid" ? (
@@ -886,8 +918,8 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
                     </div>
 
                     <div className="my-7 grid gap-4 md:grid-cols-3">
-                      <DetailStat label="BPM" value={activeRequest.bpm ? String(activeRequest.bpm) : "—"} />
-                      <DetailStat label="Key" value={activeRequest.key ?? "—"} />
+                      <DetailStat label="🥁 BPM" value={activeRequest.bpm ? String(activeRequest.bpm) : "—"} />
+                      <DetailStat label="🎵 Key" value={activeRequest.key ?? "—"} />
                       <DetailStat label="Wait" value={formatWaitFromSubmittedAt(activeRequest.submittedAt)} />
                     </div>
 
@@ -903,25 +935,25 @@ export function Dashboard({ eventId, eventCode, djId, onLogout, onEventCreated, 
                         label="Mark Seen"
                         tone="blue"
                         icon={Eye}
-                        onClick={() => handleRequestAction(activeRequest.id, "seen")}
+                        onClick={() => handleRequestAction(activeRequest.requestIds, "seen")}
                       />
                       <ActionButton
                         label="Save"
                         tone="amber"
                         icon={Save}
-                        onClick={() => handleRequestAction(activeRequest.id, "saved")}
+                        onClick={() => handleRequestAction(activeRequest.requestIds, "saved")}
                       />
                       <ActionButton
                         label="Play"
                         tone="green"
                         icon={Check}
-                        onClick={() => handleRequestAction(activeRequest.id, "played")}
+                        onClick={() => handleRequestAction(activeRequest.requestIds, "played")}
                       />
                       <ActionButton
                         label="Skip"
                         tone="red"
                         icon={XCircle}
-                        onClick={() => handleRequestAction(activeRequest.id, "skipped")}
+                        onClick={() => handleRequestAction(activeRequest.requestIds, "skipped")}
                       />
                     </div>
                   </>

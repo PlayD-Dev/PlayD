@@ -6,6 +6,9 @@ const now = Date.now();
 export const mockSongRequests: DashboardRequest[] = [
   {
     id: "req_1",
+    requestIds: ["req_1"],
+    spotifyId: "mock_1",
+    requestCount: 1,
     title: "Levitating",
     artist: "Dua Lipa",
     requesterName: "Sarah M.",
@@ -19,6 +22,9 @@ export const mockSongRequests: DashboardRequest[] = [
   },
   {
     id: "req_2",
+    requestIds: ["req_2"],
+    spotifyId: "mock_2",
+    requestCount: 1,
     title: "Blinding Lights",
     artist: "The Weeknd",
     requesterName: "Mike R.",
@@ -31,6 +37,9 @@ export const mockSongRequests: DashboardRequest[] = [
   },
   {
     id: "req_3",
+    requestIds: ["req_3"],
+    spotifyId: "mock_3",
+    requestCount: 1,
     title: "Don't Start Now",
     artist: "Dua Lipa",
     requesterName: "Jessica T.",
@@ -44,6 +53,9 @@ export const mockSongRequests: DashboardRequest[] = [
   },
   {
     id: "req_4",
+    requestIds: ["req_4"],
+    spotifyId: "mock_4",
+    requestCount: 1,
     title: "As It Was",
     artist: "Harry Styles",
     requesterName: "Alex K.",
@@ -56,6 +68,9 @@ export const mockSongRequests: DashboardRequest[] = [
   },
   {
     id: "req_5",
+    requestIds: ["req_5"],
+    spotifyId: "mock_5",
+    requestCount: 1,
     title: "One Kiss",
     artist: "Calvin Harris & Dua Lipa",
     requesterName: "Nia B.",
@@ -68,6 +83,9 @@ export const mockSongRequests: DashboardRequest[] = [
   },
   {
     id: "req_6",
+    requestIds: ["req_6"],
+    spotifyId: "mock_6",
+    requestCount: 1,
     title: "Cruel Summer",
     artist: "Taylor Swift",
     requesterName: "Chris D.",
