@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
+import { fetchSongBpm } from '@/lib/songbpm'
 import type { SpotifyTrack } from '@/lib/spotify'
 
 /**
@@ -21,6 +22,31 @@ export async function POST(req: NextRequest) {
 
   const t = track as SpotifyTrack
 
+  // Block same guest from requesting the same song twice in the same event
+  const { data: selfDupe } = await supabaseAdmin
+    .from('requests')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('session_id', sessionId)
+    .eq('track_data->>spotifyId', t.id)
+    .in('status', ['pending', 'seen'])
+    .maybeSingle()
+
+  if (selfDupe) {
+    return NextResponse.json({ error: 'You already requested this song.' }, { status: 409 })
+  }
+
+  // Fetch BPM server-side — non-critical, never blocks the request
+  let bpm: number | null = null
+  let keyName: string | null = null
+  let timeSig: number | null = null
+  try {
+    const meta = await fetchSongBpm(t.id, t.name, t.artists?.[0]?.name ?? '')
+    bpm = meta.bpm
+    keyName = meta.keyName
+    timeSig = meta.timeSig
+  } catch { /* non-critical */ }
+
   const trackData = {
     spotifyId: t.id,
     title:     t.name,
@@ -29,9 +55,9 @@ export async function POST(req: NextRequest) {
     albumArt:  t.album?.images?.[0]?.url ?? null,
     url:       t.external_urls?.spotify ?? null,
     previewUrl: t.preview_url ?? null,
-    bpm:       t.bpm ?? null,
-    key:       t.keyName ?? null,
-    timeSig:   t.timeSig ?? null,
+    bpm,
+    key:       keyName,
+    timeSig,
   }
 
   const { data: request, error: requestError } = await supabaseAdmin
