@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   try {
     // Check Redis cache first
-    const cacheKey = `search:${q}:${limit}`
+    const cacheKey = `search:v2:${q}:${limit}`
     if (redis) {
       const cached = await redis.get(cacheKey)
       if (cached) return NextResponse.json(cached)
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const headers = { Authorization: `Bearer ${token}` }
 
     // Search Spotify
-    const searchParams = new URLSearchParams({ q, type: 'track', limit: String(limit) })
+    const searchParams = new URLSearchParams({ q, type: 'track', limit: String(limit), market: 'US' })
     const searchRes = await fetch(`https://api.spotify.com/v1/search?${searchParams}`, { headers })
 
     if (!searchRes.ok) {
@@ -33,14 +33,26 @@ export async function GET(req: NextRequest) {
     const searchData = await searchRes.json()
     const rawTracks = searchData.tracks?.items ?? []
 
-    const tracks: SpotifyTrack[] = rawTracks.map((track: SpotifyTrack) => ({
-      ...track,
-      bpm: null,
-      key: null,
-      keyName: null,
-      mode: null,
-      timeSig: null,
-    }))
+    // Deduplicate: first by Spotify ID, then by normalized title+artist (same recording, different IDs)
+    const seenIds = new Set<string>()
+    const seenKeys = new Set<string>()
+    const tracks: SpotifyTrack[] = rawTracks
+      .filter((track: SpotifyTrack) => {
+        if (seenIds.has(track.id)) return false
+        seenIds.add(track.id)
+        const key = `${track.name.toLowerCase()}|${track.artists[0]?.name.toLowerCase() ?? ''}`
+        if (seenKeys.has(key)) return false
+        seenKeys.add(key)
+        return true
+      })
+      .map((track: SpotifyTrack) => ({
+        ...track,
+        bpm: null,
+        key: null,
+        keyName: null,
+        mode: null,
+        timeSig: null,
+      }))
 
     const result = { tracks }
 
