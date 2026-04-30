@@ -15,24 +15,12 @@ type SongDetailModalProps = {
   onClose: () => void;
   submitting: boolean;
   error?: string | null;
+  alreadyRequested?: boolean;
 };
 
 function msToMin(ms: number): string {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function MetaPill({ label, value }: { label: string; value: string | number | null | undefined }) {
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-xl bg-black/50 px-3 py-2.5">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-[#5a6785]">
-        {label}
-      </span>
-      <span className="text-sm font-semibold text-white">
-        {value != null ? String(value) : "\u2014"}
-      </span>
-    </div>
-  );
 }
 
 export function SongDetailModal({
@@ -45,6 +33,7 @@ export function SongDetailModal({
   onClose,
   submitting,
   error,
+  alreadyRequested,
 }: SongDetailModalProps) {
   const albumArtLarge = track.album.images[0]?.url ?? "";
   const albumArtMedium = track.album.images[1]?.url ?? albumArtLarge;
@@ -129,13 +118,6 @@ export function SongDetailModal({
             </div>
           </div>
 
-          {/* Metadata pills — data comes from search results, no extra fetch needed */}
-          <div className="mb-5 grid grid-cols-3 gap-2">
-            <MetaPill label="BPM" value={track.bpm} />
-            <MetaPill label="Key" value={track.keyName} />
-            <MetaPill label="Time" value={track.timeSig ? `${track.timeSig}/4` : null} />
-          </div>
-
           {/* Message */}
           <div className="mb-5">
             <textarea
@@ -160,21 +142,27 @@ export function SongDetailModal({
           )}
 
           {/* Submit */}
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-b from-[#b72959] to-[#8f1a44] py-4 text-base font-bold text-white shadow-[0_4px_20px_rgba(183,41,89,0.35)] transition-all duration-200 hover:shadow-[0_6px_28px_rgba(183,41,89,0.45)] active:scale-[0.98] disabled:opacity-60"
-          >
-            {submitting ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <>
-                <Send className="h-5 w-5" />
-                <span>Request Song</span>
-              </>
-            )}
-          </button>
+          {alreadyRequested ? (
+            <div className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-[#b72959]/30 bg-[#b72959]/10 py-4 text-base font-bold text-[#b72959]">
+              You already requested this song
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-b from-[#b72959] to-[#8f1a44] py-4 text-base font-bold text-white shadow-[0_4px_20px_rgba(183,41,89,0.35)] transition-all duration-200 hover:shadow-[0_6px_28px_rgba(183,41,89,0.45)] active:scale-[0.98] disabled:opacity-60"
+            >
+              {submitting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <Send className="h-5 w-5" />
+                  <span>Request Song</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

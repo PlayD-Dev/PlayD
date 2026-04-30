@@ -71,6 +71,9 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Tracks which Spotify IDs this session has already requested (active requests only)
+  const [requestedSpotifyIds, setRequestedSpotifyIds] = useState<Set<string>>(new Set());
+
   // Realtime state
   const [eventEnded, setEventEnded] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -133,7 +136,42 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
     setSessionLoading(false);
   }
 
+  // ─── Load already-requested songs for this event (any guest) ───────────────
+  useEffect(() => {
+    supabase
+      .from("requests")
+      .select("track_data")
+      .eq("event_id", eventId)
+      .in("status", ["pending", "seen"])
+      .then(({ data }) => {
+        if (!data) return;
+        const ids = new Set(
+          data
+            .map((r) => (r.track_data as { spotifyId?: string } | null)?.spotifyId)
+            .filter((id): id is string => Boolean(id))
+        );
+        setRequestedSpotifyIds(ids);
+      });
+  }, [eventId]);
+
   // ─── Supabase Realtime ──────────────────────────────────────────────────────
+
+  // Keep requestedSpotifyIds live — add any song newly requested by any guest
+  useEffect(() => {
+    const channel = supabase
+      .channel(`requests:event:${eventId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "requests", filter: `event_id=eq.${eventId}` },
+        (payload) => {
+          const spotifyId = (payload.new?.track_data as { spotifyId?: string } | null)?.spotifyId;
+          if (spotifyId) setRequestedSpotifyIds((prev) => new Set([...prev, spotifyId]));
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [eventId]);
 
   // Watch for the event ending so we can show the overlay mid-session
   useEffect(() => {
@@ -239,6 +277,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
+      setRequestedSpotifyIds((prev) => new Set([...prev, selectedTrack.id]));
       setSubmitted(true);
       setTimeout(() => { setSubmitted(false); handleClose(); }, 1800);
     } catch (err) {
@@ -350,7 +389,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
             </div>
           )}
 
-          {searchLoading && !tracks.length && (
+          {(searchLoading || (query.trim() && query !== debouncedQuery)) && !tracks.length && (
             <div className="flex flex-col gap-3">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex items-center gap-3.5 rounded-2xl border border-[#2b3139] bg-[#10151d] p-3.5">
@@ -364,7 +403,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
             </div>
           )}
 
-          {query.trim() && !searchLoading && !searchError && tracks.length === 0 && (
+          {query.trim() && query === debouncedQuery && !searchLoading && !searchError && tracks.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <p className="text-sm text-[#5a6785]">No results for &ldquo;{query}&rdquo;</p>
             </div>
@@ -376,6 +415,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
               track={track}
               onClick={() => setSelectedTrack(track)}
               index={index}
+              alreadyRequested={requestedSpotifyIds.has(track.id)}
             />
           ))}
         </div>
@@ -393,6 +433,7 @@ export function RequestPage({ eventId, eventName }: RequestPageProps) {
           onClose={handleClose}
           submitting={submitting}
           error={submitError}
+          alreadyRequested={requestedSpotifyIds.has(selectedTrack.id)}
         />
       )}
 
